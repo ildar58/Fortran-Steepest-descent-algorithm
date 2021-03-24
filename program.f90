@@ -8,6 +8,8 @@ program main
 	! Body
 	write (*, *) "Начало программы"
 	
+	call cpu_time(timeStart)
+	
 	! Выделяем память и считываем данные
 	open(1,file="matrix.f90")
 	read(1,*) n
@@ -39,9 +41,9 @@ program main
 	deallocate(B)
 	deallocate(X)
 
-	write(*,*) "Программа завершена"
-end
+	call cpu_time(timeStop)
 
-subroutine cpu_time(time)
-	
+	write(*,*) timeStop-timeStart
+
+	write(*,*) "Программа завершена"
 end
