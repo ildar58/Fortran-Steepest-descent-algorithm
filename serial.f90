@@ -1,18 +1,18 @@
 program main
+	use procedures
+
 	implicit none
 	!!! Переменные
 	! A - исходная матрица коэф., B - правая часть, X - вектор решения, Ax(A*x), Rk(невязка)
-	real, allocatable :: A(:,:), B(:), X(:), Ax(:), Rk(:), temp(:)
-	integer :: length, i, j
-	real :: timeStart, timeStop, tau, eps=0.000001, vectors_scalar_multiplication
-	logical :: check_result
+	integer :: length = 4
+	integer :: i, j
+	real*8, allocatable :: A(:, :), B(:), X(:), Ax(:), Rk(:), temp(:)
+	real*8 :: timeStart, timeStop, tau, eps=0.000001
 
 	!!! Body
 	write (*, *) "Начало программы"
 	
-	! Выделяем память
-	open(1,file="matrix.f90")
-	read(1,*) length
+	!! Выделяем память
 	allocate(A(length,length))
 	allocate(B(length))
 	allocate(X(length))
@@ -20,41 +20,43 @@ program main
 	allocate(Rk(length))
 	allocate(temp(length))
 	
-	! Считываем данные
-	do i=1,length
-		read(1,*)(A(i,j), j=1,length), B(i)
-	end do
-
+	! Генерируем данные
+	call fill_matrix(A, length)
+	call fill_vector(B, length)
+	
 	! Вывод матрицы
 	write(*,*) "Размерность матрицы = ", length
 	write(*,*) ""
 	
-	call show_matrix(A, length, "Исходна матрица А:")	
-	call show_vector(A, length, "Исходная матрица B:")
+	write(*,*) "Матрица A:"
+	call show_matrix(A)
+	write(*,*) "Матрица B:"	
+	call show_vector(B)
 	
 	call cpu_time(timeStart)
 	
 	! Задаем начальные значения
 	do i=1,length
 		! Преобладание диагональных элементов для достаточного условия сходимости
-		X(i)=B(i)/A(i,i)
+		X(i)=B(i) / A(i,i)
 	end do
 	
 	! Вычисляем вектор невязок (Ax-b)
-	call multiplication_matrix_vector(A, X, length, Ax)
-	call vectors_difference(Ax, B, length, Rk)
+	call multiplication_matrix_vector(A, X, Ax)
+	call vectors_difference(Ax, B, Rk)
 	
-	do while(check_result(Rk, length, eps))
-		call multiplication_matrix_vector(A, Rk, length, Ax)
-		tau = vectors_scalar_multiplication(Rk, Rk, length) / vectors_scalar_multiplication(Ax, Rk, length)
-		call multiplication_num_vector(Rk, tau, length, temp)
-		call multiplication_num_vector(Ax, tau, length, Ax)
-		call vectors_difference(X, temp, length, X)
-		call vectors_difference(Rk, Ax, length, Rk)
+	do while(check_result(Rk, eps))
+		call multiplication_matrix_vector(A, Rk, Ax)
+		tau = vectors_scalar_multiplication(Rk, Rk) / vectors_scalar_multiplication(Ax, Rk)
+		call multiplication_num_vector(Rk, tau, temp)
+		call multiplication_num_vector(Ax, tau, Ax)
+		call vectors_difference(X, temp, X)
+		call vectors_difference(Rk, Ax, Rk)
 	end do
 	
 	! Результаты
-	call show_vector(X, length, "Результирующий вектор X:")
+	write(*,*) "Матрица X:"
+	call show_vector(X)
 		
 	! Чистим память
 	deallocate(A)
@@ -70,100 +72,5 @@ program main
 
 	write(*,*) "Программа завершена"
 end
-
-! Разность векторов
-subroutine vectors_difference(A, B, length, result_vector)
-	implicit none
-	integer :: i
-	integer, intent(in) :: length	
-	real, intent(in out) :: A(length), B(length), result_vector(length)
-	do i=1,length
-		result_vector(i) = A(i) - B(i)
-	end do
-end subroutine vectors_difference
-
-! Умножение матрицы на вектор
-subroutine multiplication_matrix_vector(matrix, vector, length, result_vector)
-	implicit none
-	integer :: i, j
-	integer, intent(in) :: length	
-	real, intent(in) :: matrix(length,length), vector(length)
-	real, intent(out) :: result_vector(length)
-	do i=1,length
-		result_vector(i)=0
-		do j=1,length
-			result_vector(i) = result_vector(i) + matrix(i,j) * vector(j)
-		end do
-	end do
-end subroutine multiplication_matrix_vector
-
-! Умножение числа на вектор
-subroutine multiplication_num_vector(vector, num, length, result_vector)
-	implicit none
-	integer :: i
-	integer, intent(in) :: length	
-	real, intent(in out) :: vector(length), num, result_vector(length)
-	do i=1,length
-		result_vector(i) = vector(i) * num
-	end do
-end subroutine multiplication_num_vector
-
-! Вывод вектора
-subroutine show_vector(vector, length, text)
-	implicit none
-	integer :: i
-	integer, intent(in) :: length
-	real, intent(in) :: vector(length)
-	character(len = 48) :: text
-	write(*,*) text
-	do i=1,length
-		write(*,20) i, vector(i)
-	end do
-	write(*,*) ""
-	20 format(1x,i4,20f8.2)
-end subroutine
-
-! Вывод матрицы
-subroutine show_matrix(matrix, length, text)
-	implicit none
-	integer :: i, j
-	integer, intent(in) :: length
-	real, intent(in) :: matrix(length, length)
-	character(len = 40) :: text
-	write(*,*) text
-	do i=1,length
-		write(*,20) i, (matrix(i,j),j=1,length)
-	end do
-	write(*,*) ""
-	20 format(1x,i4,20f8.2)
-end subroutine
-
-! Скалярное произведение векторов
-real function vectors_scalar_multiplication(A, B, length) result(res)
-	implicit none
-	integer, intent(in) :: length
-	real, intent(in) :: A(length), B(length)
-	integer :: i
-	res = 0
-	do i=1,length
-		res = res + A(i) * B(i)
-	end do
-	return
-end function vectors_scalar_multiplication
-
-! Проверка сходимости
-logical function check_result(A, length, eps) result(res)
-	implicit none
-	real, intent(in) :: A(length), eps
-	integer, intent(in) :: length
-	integer :: i
-	do i=1,length
-		res = ABS(A(i)) > eps
-			if (.not. res) then
-				exit
-			end if
-	end do
-	return
-end function check_result
 
 
