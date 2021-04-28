@@ -24,8 +24,8 @@ module procedures
 		real*8, dimension(:), intent(in) :: vector
 		real*8, dimension(:), intent(out) :: result_vector
 		
-		length_m = size(matrix, 2)
-		length_v = size(matrix, 1)
+		length_m = size(matrix, 1)
+		length_v = size(vector, 1)
 		
 		do i=1,length_m
 			result_vector(i) = 0
@@ -65,14 +65,12 @@ module procedures
 	end subroutine
 	
 	! Вывод матрицы
-	subroutine show_matrix(matrix)
-		integer :: i, j, length
+	subroutine show_matrix(matrix, lengthA, lengthB)
+		integer :: i, j, length, lengthA, lengthB
 		real*8, dimension(:,:), intent(in) :: matrix
 
-		length = size(matrix, 1)
-
-		do i=1,length
-			write(*,20) i, (matrix(i,j),j=1,length)
+		do i=1,lengthA
+			write(*,20) i, (matrix(i,j),j=1,lengthB)
 		end do
 		
 		write(*,*) ""
@@ -112,16 +110,22 @@ module procedures
 	end function check_result
 	
 	subroutine fill_matrix(matrix, length)
-		integer :: i, j
+		integer :: i, j, k
 		integer, intent(in) :: length
 		real*8, dimension(length, length), intent(in out) :: matrix
+		call random_seed()
+		do i=1, length
+			do j=1, length
+				call random_number(matrix(i,j))
+			end do
+		end do
 		do i=1, length
 			do j=i, length
-				if (i == j) then
-					matrix(i,j) = length + 5
-				else
-					matrix(j,i) = j
-					matrix(i,j) = j
+					if (i == j) then
+						do k = 1,length
+							matrix(i,j) = matrix(i,j) + matrix(i,k)
+						end do
+					else
 				end if
 			end do
 		end do
@@ -132,7 +136,7 @@ module procedures
 		integer, intent(in) :: length
 		real*8, dimension(length), intent(in out) :: vector
 		do i=1, length
-			vector(i) = i
+			vector(i) = i*5.42
 		end do		
 	end subroutine
 end module procedures

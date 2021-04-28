@@ -1,181 +1,98 @@
-program main
-	implicit none
-	include 'mpif.h'
-	! Переменные для MPI
-	integer :: iErr         
-    	integer :: rank
-    	integer :: nProcess
-    	integer, dimension(MPI_STATUS_SIZE) :: status
-	
-	!!! Переменные
-	! A - исходная матрица коэф., B - правая часть, X - вектор решения, Ax(A*x), Rk(невязка)
-	real, allocatable :: A(:,:), B(:), X(:), Ax(:), Rk(:), temp(:)
-	integer :: length, i, j
-	real :: timeStart, timeStop, tau, eps=0.000001, vectors_scalar_multiplication
-	logical :: check_result
-
-	!!! Body
-	write (*, *) "Начало программы"
-	
-	! Выделяем память
-	open(1,file="matrix.f90")
-	read(1,*) length
-	allocate(A(length,length))
-	allocate(B(length))
-	allocate(X(length))
-	allocate(Ax(length))
-	allocate(Rk(length))
-	allocate(temp(length))
-	
-	! Считываем данные
-	do i=1,length
-		read(1,*)(A(i,j), j=1,length), B(i)
-	end do
-
-	! Вывод матрицы
-	write(*,*) "Размерность матрицы = ", length
-	write(*,*) ""
-	
-	call show_matrix(A, length, "Исходна матрица А:")	
-	call show_vector(A, length, "Исходная матрица B:")
-	
-	call cpu_time(timeStart)
-	
-	call MPI_INIT(iErr)
-	call MPI_COMM_SIZE(MPI_COMM_WORLD, nProcess, iErr)
-	call MPI_COMM_RANK(MPI_COMM_WORLD, rank, iErr)
-	
-	! Задаем начальные значения
-	do i=1,length
-		! Преобладание диагональных элементов для достаточного условия сходимости
-		X(i)=B(i)/A(i,i)
-	end do
-	
-	! Вычисляем вектор невязок (Ax-b)
-	call multiplication_matrix_vector(A, X, length, Ax)
-	call vectors_difference(Ax, B, length, Rk)
-	
-	do while(check_result(Rk, length, eps))
-		call multiplication_matrix_vector(A, Rk, length, Ax)
-		tau = vectors_scalar_multiplication(Rk, Rk, length) / vectors_scalar_multiplication(Ax, Rk, length)
-		call multiplication_num_vector(Rk, tau, length, temp)
-		call multiplication_num_vector(Ax, tau, length, Ax)
-		call vectors_difference(X, temp, length, X)
-		call vectors_difference(Rk, Ax, length, Rk)
-	end do
-	call MPI_FINALIZE(iErr)
-	
-	! Результаты
-	call show_vector(X, length, "Результирующий вектор X:")
+	program main
+		use procedures
+		implicit none
+		include 'mpif.h'
 		
-	! Чистим память
-	deallocate(A)
-	deallocate(B)
-	deallocate(X)
-	deallocate(Ax)
-	deallocate(Rk)
-	deallocate(temp)
+		!!! Переменные
+		! A - исходная матрица коэф., B - правая часть, X - вектор решения, Ax(A*x), Rk(невязка)
+		integer :: length = 20, lenghtThread
+		integer :: i, j, iErr, nProcess, rank, status(MPI_STATUS_SIZE)
+		real*8, allocatable :: A(:, :), B(:), X(:), Ax(:), Rk(:), temp(:), Athread(:,:), Bthread(:), Rkthread(:), Axthread(:)
+		real*8 :: timeStart, timeStop, tau, eps=0.000001
 
-	call cpu_time(timeStop)
+		call MPI_INIT(iErr)
+		call MPI_COMM_SIZE(MPI_COMM_WORLD, nProcess, iErr)
+		call MPI_COMM_RANK(MPI_COMM_WORLD, rank, iErr)
+		
 
-	write(*,*) "Время работы: ", timeStop - timeStart
-
-	write(*,*) "Программа завершена"
-end
-
-! Разность векторов
-subroutine vectors_difference(A, B, length, result_vector)
-	implicit none
-	integer :: i
-	integer, intent(in) :: length	
-	real, intent(in out) :: A(length), B(length), result_vector(length)
-	do i=1,length
-		result_vector(i) = A(i) - B(i)
-	end do
-end subroutine vectors_difference
-
-! Умножение матрицы на вектор
-subroutine multiplication_matrix_vector(matrix, vector, length, result_vector)
-	implicit none
-	integer :: i, j
-	integer, intent(in) :: length	
-	real, intent(in) :: matrix(length,length), vector(length)
-	real, intent(out) :: result_vector(length)
-	do i=1,length
-		result_vector(i)=0
-		do j=1,length
-			result_vector(i) = result_vector(i) + matrix(i,j) * vector(j)
+		!! Выделяем память
+		allocate(A(length,length))
+		allocate(Athread(length/4,length))
+		allocate(X(length))
+		allocate(B(length))
+		allocate(Bthread(length/4))
+		allocate(Ax(length))
+		allocate(Axthread(length/4))
+		allocate(Rk(length))
+		allocate(Rkthread(length/4))
+		allocate(temp(length/4))
+	! Генерируем данные
+		call fill_matrix(A, length)
+		call fill_vector(B, length)
+		do i=1,length
+			X(i)=(0)
 		end do
-	end do
-end subroutine multiplication_matrix_vector
 
-! Умножение числа на вектор
-subroutine multiplication_num_vector(vector, num, length, result_vector)
-	implicit none
-	integer :: i
-	integer, intent(in) :: length	
-	real, intent(in out) :: vector(length), num, result_vector(length)
-	do i=1,length
-		result_vector(i) = vector(i) * num
-	end do
-end subroutine multiplication_num_vector
+		call cpu_time(timeStart)
+		if (rank == 0) then
+			Athread = A(1:length/4, 1:length)
+			call MPI_SEND(A(length/4+1:length/2,1:length), (length/4)*length*2, MPI_REAL, 1, 0, MPI_COMM_WORLD, iErr)
+			call MPI_SEND(A(length/2+1:(length/4)*3,1:length), (length/4)*length*2, MPI_REAL, 2, 0, MPI_COMM_WORLD, iErr)
+			call MPI_SEND(A(length/4*3+1:length,1:length), (length/4)*length*2, MPI_REAL, 3, 0, MPI_COMM_WORLD, iErr)
 
-! Вывод вектора
-subroutine show_vector(vector, length, text)
-	implicit none
-	integer :: i
-	integer, intent(in) :: length
-	real, intent(in) :: vector(length)
-	character(len = 48) :: text
-	write(*,*) text
-	do i=1,length
-		write(*,20) i, vector(i)
-	end do
-	write(*,*) ""
-	20 format(1x,i4,20f8.2)
-end subroutine
+			Bthread = B(1:length/4)
+			call MPI_SEND(B(length/4+1:length/2), (length/2), MPI_REAL, 1, 0, MPI_COMM_WORLD, iErr)
+			call MPI_SEND(B(length/2+1:(length/4)*3), (length/2), MPI_REAL, 2, 0, MPI_COMM_WORLD, iErr)
+			call MPI_SEND(B(length/4*3+1:length), (length/2), MPI_REAL, 3, 0, MPI_COMM_WORLD, iErr)
+		else
+			call MPI_RECV(Athread, (length/4)*length*2, MPI_REAL, 0, 0, MPI_COMM_WORLD, status,iErr)
+			call MPI_RECV(Bthread, (length/4)*length*2, MPI_REAL, 0, 0, MPI_COMM_WORLD, status,iErr)
+		end if
 
-! Вывод матрицы
-subroutine show_matrix(matrix, length, text)
-	implicit none
-	integer :: i, j
-	integer, intent(in) :: length
-	real, intent(in) :: matrix(length, length)
-	character(len = 40) :: text
-	write(*,*) text
-	do i=1,length
-		write(*,20) i, (matrix(i,j),j=1,length)
-	end do
-	write(*,*) ""
-	20 format(1x,i4,20f8.2)
-end subroutine
+		! Вычисляем вектор невязок (Ax-b)
+		call multiplication_matrix_vector(Athread, X, Axthread)
+		call vectors_difference(Axthread, Bthread, Rkthread)
+		!call MPI_GATHER(Rkthread, (length/4)*length*2, MPI_REAL, Rk, length*length*2, MPI_REAL, 0, MPI_COMM_WORLD, iErr)
+		if (rank == 0) then
+			Rk(1:length/4) = Rkthread
 
-! Скалярное произведение векторов
-real function vectors_scalar_multiplication(A, B, length) result(res)
-	implicit none
-	integer, intent(in) :: length
-	real, intent(in) :: A(length), B(length)
-	integer :: i
-	res = 0
-	do i=1,length
-		res = res + A(i) * B(i)
-	end do
-	return
-end function vectors_scalar_multiplication
+			call MPI_RECV(Rkthread, (length/2), MPI_REAL, 1, 1, MPI_COMM_WORLD, status,iErr)
+			Rk(length/4+1:length/2) = Rkthread
 
-! Проверка сходимости
-logical function check_result(A, length, eps) result(res)
-	implicit none
-	real, intent(in) :: A(length), eps
-	integer, intent(in) :: length
-	integer :: i
-	do i=1,length
-		res = ABS(A(i)) > eps
-			if (.not. res) then
-				exit
-			end if
-	end do
-	return
-end function check_result
+			call MPI_RECV(Rkthread, (length/2), MPI_REAL, 2, 2, MPI_COMM_WORLD, status,iErr)
+			Rk(length/2+1:(length/4)*3) = Rkthread
+
+			call MPI_RECV(Rkthread, (length/2), MPI_REAL, 3, 3, MPI_COMM_WORLD, status,iErr)
+			Rk(length/4*3+1:length) = Rkthread
+
+			call show_vector(Rk)
+
+			call multiplication_matrix_vector(A, X, Ax)
+			call vectors_difference(Ax, B, Rk)
+
+			call show_vector(Rk)
+		else
+			call MPI_SEND(Rkthread, (length/2), MPI_REAL, 0, rank, MPI_COMM_WORLD, iErr)
+		end if
 
 
+		! Результаты
+		!write(*,*) "Матрица X:"
+		!call show_vector(X)
+			
+		! Чистим память
+		deallocate(X)
+		deallocate(Ax)
+		deallocate(Rk)
+		deallocate(temp)
+	
+		!call cpu_time(timeStop)
+	
+		!write(*,*) "Время работы: ", timeStop - timeStart
+	
+		!write(*,*) "Программа завершена"
+		call MPI_FINALIZE(iErr)
+	end program main
+	
+	
+	
