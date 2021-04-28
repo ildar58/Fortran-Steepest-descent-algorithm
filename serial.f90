@@ -4,7 +4,7 @@ program main
 	implicit none
 	!!! Переменные
 	! A - исходная матрица коэф., B - правая часть, X - вектор решения, Ax(A*x), Rk(невязка)
-	integer :: length = 4
+	integer :: length = 5
 	integer :: i, j
 	real*8, allocatable :: A(:, :), B(:), X(:), Ax(:), Rk(:), temp(:)
 	real*8 :: timeStart, timeStop, tau, eps=0.000001
@@ -29,7 +29,7 @@ program main
 	write(*,*) ""
 	
 	write(*,*) "Матрица A:"
-	call show_matrix(A)
+	call show_matrix(A, length, length)
 	write(*,*) "Матрица B:"	
 	call show_vector(B)
 	
@@ -38,7 +38,7 @@ program main
 	! Задаем начальные значения
 	do i=1,length
 		! Преобладание диагональных элементов для достаточного условия сходимости
-		X(i)=B(i) / A(i,i)
+		X(i)=0
 	end do
 	
 	! Вычисляем вектор невязок (Ax-b)
