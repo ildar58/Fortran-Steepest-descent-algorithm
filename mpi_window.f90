@@ -7,6 +7,8 @@
 		! A - исходная матрица коэф., B - правая часть, X - вектор решения, Ax(A*x), Rk(невязка)
 		integer :: length = 20
 		integer :: i, j, iErr, nProcess, rank, status(MPI_STATUS_SIZE), iter=0
+		real*8, allocatable :: A_BUF(:, :), B_BUF(:)
+		integer (KIND=MPI_ADDRESS_KIND) lb, extent, target_disp
 		real*8, allocatable :: A(:, :), B(:), X(:), Ax(:), Rk(:), temp(:), Athread(:,:), Bthread(:), Rkthread(:), Axthread(:)
 		real*8, allocatable :: tempThread(:)
 		real*8 :: timeStart, timeStop, tau, eps=0.000001
@@ -15,16 +17,22 @@
 		call MPI_INIT(iErr)
 		call MPI_COMM_SIZE(MPI_COMM_WORLD, nProcess, iErr)
 		call MPI_COMM_RANK(MPI_COMM_WORLD, rank, iErr)
-		call MPI_WIN_CREATE(A, length*length*sizeof(MPI_REAL), length*length*4, MPI_INFO_NULL, MPI_COMM_WORLD, winA, iErr)
-		call MPI_WIN_CREATE(B, length*sizeof(MPI_REAL), length*4, MPI_INFO_NULL, MPI_COMM_WORLD, winB, iErr)
+	
+		
+		call MPI_TYPE_GET_EXTENT(MPI_REAL, lb, extent, ierr)
+		allocate(A_BUF(length,length))
+		allocate(B_BUF(length))
+		
+		call MPI_WIN_CREATE(A_BUF, length*length*extent, extent, MPI_INFO_NULL, MPI_COMM_WORLD, winA, iErr)
+		call MPI_WIN_CREATE(B_BUF, length*extent, extent, MPI_INFO_NULL, MPI_COMM_WORLD, winB, iErr)
 		call MPI_WIN_FENCE(0, winA, iErr)
 		call MPI_WIN_FENCE(0, winB, iErr)
 
 		!! Выделяем память
 		allocate(A(length,length))
+		allocate(B(length))
 		allocate(Athread(length/4,length))
 		allocate(X(length))
-		allocate(B(length))
 		allocate(Bthread(length/4))
 		allocate(Ax(length))
 		allocate(Axthread(length/4))
