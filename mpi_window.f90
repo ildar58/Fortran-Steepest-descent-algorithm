@@ -5,16 +5,21 @@
 		
 		!!! Переменные
 		! A - исходная матрица коэф., B - правая часть, X - вектор решения, Ax(A*x), Rk(невязка)
-		integer :: length = 10000
+		integer :: length = 20
 		integer :: i, j, iErr, nProcess, rank, status(MPI_STATUS_SIZE), iter=0
 		real*8, allocatable :: A(:, :), B(:), X(:), Ax(:), Rk(:), temp(:), Athread(:,:), Bthread(:), Rkthread(:), Axthread(:)
 		real*8, allocatable :: tempThread(:)
 		real*8 :: timeStart, timeStop, tau, eps=0.000001
+		integer :: winA, winB
 
 		call MPI_INIT(iErr)
 		call MPI_COMM_SIZE(MPI_COMM_WORLD, nProcess, iErr)
 		call MPI_COMM_RANK(MPI_COMM_WORLD, rank, iErr)
-		
+		call MPI_WIN_CREATE(A, length*length*sizeof(MPI_REAL), length*length*4, MPI_INFO_NULL, MPI_COMM_WORLD, winA, iErr)
+		call MPI_WIN_CREATE(B, length*sizeof(MPI_REAL), length*4, MPI_INFO_NULL, MPI_COMM_WORLD, winB, iErr)
+		call MPI_WIN_FENCE(0, winA, iErr)
+		call MPI_WIN_FENCE(0, winB, iErr)
+
 		!! Выделяем память
 		allocate(A(length,length))
 		allocate(Athread(length/4,length))
@@ -39,17 +44,28 @@
 		call cpu_time(timeStart)
 		if (rank == 0) then
 			Athread = A(1:length/4, 1:length)
-			call MPI_SEND(A(length/4+1:length/2,1:length), (length/4)*length*2, MPI_REAL, 1, 0, MPI_COMM_WORLD, iErr)
-			call MPI_SEND(A(length/2+1:(length/4)*3,1:length), (length/4)*length*2, MPI_REAL, 2, 0, MPI_COMM_WORLD, iErr)
-			call MPI_SEND(A(length/4*3+1:length,1:length), (length/4)*length*2, MPI_REAL, 3, 0, MPI_COMM_WORLD, iErr)
 
+			call MPI_Put(A(length/4+1:length/2,1:length), (length/4)*length*2, MPI_REAL, 1, &
+			2*length*length, (length/4)*length*2, MPI_REAL, winA, iErr)
+			call MPI_Put(A(length/2+1:(length/4)*3,1:length), (length/4)*length*2, MPI_REAL, 2,&
+			 3*length*length, (length/4)*length*2, MPI_REAL, winA, iErr)
+			call MPI_Put(A(length/4*3+1:length,1:length), (length/4)*length*2, MPI_REAL, 3, &
+			4*length*length, (length/4)*length*2, MPI_REAL, winA, iErr)
 			Bthread = B(1:length/4)
-			call MPI_SEND(B(length/4+1:length/2), (length/2), MPI_REAL, 1, 0, MPI_COMM_WORLD, iErr)
-			call MPI_SEND(B(length/2+1:(length/4)*3), (length/2), MPI_REAL, 2, 0, MPI_COMM_WORLD, iErr)
-			call MPI_SEND(B(length/4*3+1:length), (length/2), MPI_REAL, 3, 0, MPI_COMM_WORLD, iErr)
+
+			call MPI_Put(B(length/4+1:length/2), (length/2), MPI_REAL, 1, 2*length, (length/2), MPI_REAL, winB, iErr)
+			call MPI_Put(B(length/2+1:(length/4)*3), (length/2), MPI_REAL, 2, 3*length, (length/2), MPI_REAL, winB, iErr)
+			call MPI_Put(B(length/4*3+1:length), (length/2), MPI_REAL, 3, 4*length, (length/2), MPI_REAL, winB, iErr)
 		else
-			call MPI_RECV(Athread, (length/4)*length*2, MPI_REAL, 0, 0, MPI_COMM_WORLD, status,iErr)
-			call MPI_RECV(Bthread, (length/4)*length*2, MPI_REAL, 0, 0, MPI_COMM_WORLD, status,iErr)
+			!call MPI_RECV(Athread, (length/4)*length*2, MPI_REAL, 0, 0, MPI_COMM_WORLD, status,iErr)
+			call MPI_Get(Athread, (length/4)*length*2, MPI_REAL, 0, rank*length*length, (length/4)*length*2, MPI_REAL, winA, iErr)
+			call MPI_WIN_FENCE(0, winA, iErr)
+			!call MPI_RECV(Bthread, (length/4)*length*2, MPI_REAL, 0, 0, MPI_COMM_WORLD, status,iErr)
+			call MPI_Get(Bthread, length/2, MPI_REAL, 0, rank*length, length/2, MPI_REAL, winB, iErr)
+			call MPI_WIN_FENCE(0, winB, iErr)
+		end if
+		if (rank /= 0) then
+			call show_matrix(Athread, length, length/4)
 		end if
 
 		! Вычисляем вектор невязок (Ax-b)
@@ -173,6 +189,8 @@
 		!write(*,*) "Время работы: ", timeStop - timeStart
 	
 		!write(*,*) "Программа завершена"
+		call MPI_Win_free(winA, iErr)
+		call MPI_Win_free(winB, iErr)
 		call MPI_FINALIZE(iErr)
 	end program main
 	
