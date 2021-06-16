@@ -116,7 +116,8 @@ module procedures
 		call random_seed()
 		do i=1, length
 			do j=1, length
-				call random_number(matrix(i,j))
+				!call random_number(matrix(i,j))
+				matrix(i,j) = 0.1
 			end do
 		end do
 		do i=1, length

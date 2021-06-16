@@ -4,8 +4,8 @@ program main
 	implicit none
 	!!! Переменные
 	! A - исходная матрица коэф., B - правая часть, X - вектор решения, Ax(A*x), Rk(невязка)
-	integer :: length = 5
-	integer :: i, j
+	integer :: length = 10000
+	integer :: i, j, iter = 0
 	real*8, allocatable :: A(:, :), B(:), X(:), Ax(:), Rk(:), temp(:)
 	real*8 :: timeStart, timeStop, tau, eps=0.000001
 
@@ -29,16 +29,16 @@ program main
 	write(*,*) ""
 	
 	write(*,*) "Матрица A:"
-	call show_matrix(A, length, length)
+	!call show_matrix(A, length, length)
 	write(*,*) "Матрица B:"	
-	call show_vector(B)
+	!call show_vector(B)
 	
 	call cpu_time(timeStart)
 	
 	! Задаем начальные значения
 	do i=1,length
 		! Преобладание диагональных элементов для достаточного условия сходимости
-		X(i)=0
+		X(i)= 0
 	end do
 	
 	! Вычисляем вектор невязок (Ax-b)
@@ -52,11 +52,13 @@ program main
 		call multiplication_num_vector(Ax, tau, Ax)
 		call vectors_difference(X, temp, X)
 		call vectors_difference(Rk, Ax, Rk)
+		iter = iter + 1
 	end do
 	
 	! Результаты
 	write(*,*) "Матрица X:"
 	call show_vector(X)
+	write(*,*) iter
 		
 	! Чистим память
 	deallocate(A)
